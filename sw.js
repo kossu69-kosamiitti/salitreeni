@@ -1,5 +1,5 @@
 // Service worker: sovellus toimii offline-tilassa (stale-while-revalidate)
-const VERSION = 'salitreeni-v2';
+const VERSION = 'salitreeni-v3';
 const ASSETS = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/db.js', 'js/util.js', 'js/data.js', 'js/charts.js', 'js/oura.js', 'js/state.js',

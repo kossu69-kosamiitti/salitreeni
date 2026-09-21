@@ -4,7 +4,8 @@ const API = 'https://api.ouraring.com/v2/usercollection/';
 const AUTH = 'https://cloud.ouraring.com/oauth/authorize';
 const SCOPES = 'daily heartrate workout personal';
 
-export const redirectUri = () => location.origin + location.pathname;
+// Normalisoidaan pois index.html, jotta osoite vastaa Ouraan rekisteröityä (esim. .../salitreeni/)
+export const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, '');
 
 export function connect(clientId) {
   const state = Math.random().toString(36).slice(2);

@@ -82,7 +82,7 @@ export const DEFAULT_SETTINGS = {
   rest: 90,
   bar: 20,
   plates: [25, 20, 15, 10, 5, 2.5, 1.25],
-  ouraClientId: '',
+  ouraClientId: 'c2ebcb09-8c3f-4fc8-87b0-5253af131b4e',
 };
 
 export const LB_DEFAULTS = { step: 5, bar: 45, plates: [45, 35, 25, 10, 5, 2.5] };

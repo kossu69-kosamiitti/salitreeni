@@ -34,3 +34,6 @@ Tiedot ovat vain puhelimessa. Ota varmuuskopio Asetukset → "Vie varmuuskopio" 
 ## Rakenne
 `index.html`, `styles.css`, `sw.js` (offline), `manifest.webmanifest`, `js/` (`state`, `db`, `views-*`, `oura`, `charts`, `data`), `icons/`.
 Päivitä `VERSION` tiedostossa `sw.js`, kun julkaiset muutoksia, niin puhelin hakee uuden version.
+
+## Oura-kehittäjäportaali
+Ouran sovellus luodaan osoitteessa https://developer.ouraring.com. Lomake vaatii Website-, Privacy Policy- ja Terms of Service -osoitteet: käytä Pages-osoitetta sekä tiedostoja `privacy.html` ja `terms.html` (esim. https://KÄYTTÄJÄ.github.io/salitreeni/privacy.html).
