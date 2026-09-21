@@ -37,3 +37,15 @@ Päivitä `VERSION` tiedostossa `sw.js`, kun julkaiset muutoksia, niin puhelin h
 
 ## Oura-kehittäjäportaali
 Ouran sovellus luodaan osoitteessa https://developer.ouraring.com. Lomake vaatii Website-, Privacy Policy- ja Terms of Service -osoitteet: käytä Pages-osoitetta sekä tiedostoja `privacy.html` ja `terms.html` (esim. https://KÄYTTÄJÄ.github.io/salitreeni/privacy.html).
+
+## Oura-välipalvelin (Cloudflare Worker)
+Ouran rajapinta ei lähetä CORS-otsakkeita, joten selain ei voi kutsua sitä suoraan (konsolissa: "Response to preflight request doesn't pass access control check"). Ratkaisu on pieni ilmainen välipalvelin, jonka koodi on tiedostossa `worker/oura-proxy.js`.
+
+1. Luo ilmainen tili osoitteessa https://dash.cloudflare.com
+2. Workers & Pages → Create → Create Worker → nimeksi `salitreeni-oura` → Deploy.
+3. Paina Edit code, korvaa koko sisältö tiedoston `worker/oura-proxy.js` sisällöllä ja paina Deploy.
+4. Kopioi Workerin osoite (muotoa `https://salitreeni-oura.XXXX.workers.dev`).
+5. Sovellus → Asetukset → Oura → liitä osoite kenttään "Välipalvelimen osoite".
+6. Muu-välilehti → Päivitä.
+
+Worker välittää vain GET-kutsut polkuun `/v2/usercollection/*` ja vain listatulta alkuperältä (`ALLOWED_ORIGINS` tiedoston alussa). Se ei tallenna dataa.

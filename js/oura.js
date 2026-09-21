@@ -1,6 +1,6 @@
 // Oura Cloud API v2 – selainpuolen kirjautuminen (implicit flow, ei palvelinta).
 // Token on voimassa noin 30 päivää, minkä jälkeen kirjaudutaan uudelleen.
-const API = 'https://api.ouraring.com/v2/usercollection/';
+const DIRECT_API = 'https://api.ouraring.com';
 const AUTH = 'https://cloud.ouraring.com/oauth/authorize';
 const SCOPES = 'daily heartrate workout personal';
 
@@ -43,14 +43,14 @@ export function readRedirect() {
 
 export const isConnected = (auth) => !!(auth && auth.token && auth.expires > Date.now());
 
-async function get(path, token, params) {
-  const u = new URL(API + path);
+async function get(base, path, token, params) {
+  const u = new URL(base + '/v2/usercollection/' + path);
   Object.entries(params).forEach(([k, v]) => u.searchParams.set(k, v));
   let r;
   try {
     r = await fetch(u, { headers: { Authorization: 'Bearer ' + token } });
   } catch {
-    throw new Error('CORS');
+    throw new Error('NET'); // selain esti pyynnön (CORS, mainosesto tai verkkovirhe)
   }
   if (r.status === 401) throw new Error('AUTH');
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -81,15 +81,22 @@ const SKIP = /strength|weight|lifting|resistance/i; // kirjataan itse sovellukse
 const dayStr = (t) => new Date(t).toISOString().slice(0, 10);
 
 // Palauttaa {workouts:[…], days:{YYYY-MM-DD:{readiness, sleep, hrv, rhr, sleepH}}}
-export async function sync(token, days = 30) {
+export async function sync(token, days = 30, proxy = '') {
+  const base = (proxy || DIRECT_API).replace(/\/+$/, '');
   const end = Date.now() + 86400000;
   const params = { start_date: dayStr(end - (days + 1) * 86400000), end_date: dayStr(end) };
-  const [workouts, readiness, sleepScores, sleeps] = await Promise.all([
-    get('workout', token, params),
-    get('daily_readiness', token, params),
-    get('daily_sleep', token, params),
-    get('sleep', token, params),
-  ]);
+  const names = ['workout', 'daily_readiness', 'daily_sleep', 'sleep'];
+  const results = await Promise.allSettled(names.map((n) => get(base, n, token, params)));
+  const errors = [];
+  const [workouts, readiness, sleepScores, sleeps] = results.map((r, i) => {
+    if (r.status === 'fulfilled') return r.value;
+    errors.push({ endpoint: names[i], message: r.reason.message });
+    return [];
+  });
+  if (errors.some((e) => e.message === 'AUTH')) throw new Error('AUTH');
+  if (errors.length === names.length) {
+    throw new Error(errors.every((e) => e.message === 'NET') ? 'CORS' : 'FAIL:' + errors.map((e) => `${e.endpoint} ${e.message}`).join(', '));
+  }
   const out = { workouts: [], days: {} };
   const day = (k) => (out.days[k] ||= {});
   readiness.forEach((r) => (day(r.day).readiness = r.score));
@@ -116,5 +123,6 @@ export async function sync(token, days = 30) {
       distance: w.distance != null ? Math.round(w.distance) : null,
     });
   });
+  out.errors = errors;
   return out;
 }

@@ -15,7 +15,7 @@ export async function syncOura({ silent = false } = {}) {
   syncMsg = 'Haetaan tietoja Ourasta…';
   if (!silent) render();
   try {
-    const res = await oura.sync(S.oura.auth.token, 30);
+    const res = await oura.sync(S.oura.auth.token, 30, S.settings.ouraProxy);
     const known = new Set(S.activities.filter((a) => a.ouraId).map((a) => a.ouraId));
     const dismissed = new Set(S.oura.dismissed || []);
     let added = 0;
@@ -29,14 +29,24 @@ export async function syncOura({ silent = false } = {}) {
     S.oura.days = { ...S.oura.days, ...res.days };
     S.oura.last = Date.now();
     await saveOura();
-    syncMsg = `Päivitetty. Uusia treenejä: ${added}.`;
+    if (res.errors && res.errors.length) {
+      const names = { workout: 'treenit', daily_readiness: 'palautuminen', daily_sleep: 'unipisteet', sleep: 'HRV ja leposyke' };
+      syncMsg = 'Päivitetty osittain (uusia treenejä: ' + added + '). Epäonnistui: ' +
+        res.errors.map((e) => `${names[e.endpoint] || e.endpoint} (${e.message === 'NET' ? 'selain esti / ei yhteyttä' : e.message})`).join(', ') + '.';
+    } else {
+      syncMsg = `Päivitetty. Uusia treenejä: ${added}.`;
+    }
   } catch (e) {
     if (e.message === 'AUTH') {
       S.oura.auth = null;
       await saveOura();
       syncMsg = 'Oura-kirjautuminen on vanhentunut. Yhdistä uudelleen Asetuksissa.';
     } else if (e.message === 'CORS') {
-      syncMsg = 'Selain esti pyynnön Ouran palvelimelle (CORS) tai verkkoyhteys puuttuu. Katso README: tarvittaessa käytetään pientä välipalvelinta.';
+      syncMsg = S.settings.ouraProxy
+        ? 'Välipalvelin ei vastaa tai estää pyynnön. Tarkista osoite Asetuksissa (Oura) ja että Worker on julkaistu.'
+        : 'Ouran rajapinta ei salli suoria selainpyyntöjä (CORS). Lisää välipalvelimen osoite Asetuksissa (Oura-osio), ohjeet README:ssä.';
+    } else if (e.message.startsWith('FAIL:')) {
+      syncMsg = 'Oura-haku epäonnistui: ' + e.message.slice(5);
     } else {
       syncMsg = 'Oura-haku epäonnistui: ' + e.message;
     }
@@ -59,7 +69,7 @@ function ouraSection() {
   return h('div', { class: 'card' },
     h('div', { class: 'row between' }, h('b', {}, 'Oura'),
       h('button', { class: 'small', disabled: syncing, onclick: () => syncOura() }, syncing ? 'Päivitetään…' : 'Päivitä')),
-    syncMsg ? h('div', { class: 'small ' + (syncMsg.startsWith('Päivitetty') ? 'ok' : 'muted'), style: 'margin-top:6px' }, syncMsg) : null,
+    syncMsg ? h('div', { class: 'small ' + (syncMsg.startsWith('Päivitetty') && !syncMsg.includes('osittain') ? 'ok' : 'muted'), style: 'margin-top:6px' }, syncMsg) : null,
     keys.length ? h('table', { style: 'margin-top:8px' },
       h('tr', {}, h('th', {}, 'Päivä'), h('th', { class: 'r' }, 'Palaut.'), h('th', { class: 'r' }, 'Uni'), h('th', { class: 'r' }, 'HRV'), h('th', { class: 'r' }, 'Leposyke')),
       keys.map((k) => {

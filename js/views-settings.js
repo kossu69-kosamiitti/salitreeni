@@ -214,7 +214,11 @@ export function renderSettings() {
           h('button', { class: 'primary big', onclick: () => {
             if (!st.ouraClientId) return toast('Syötä ensin Client ID');
             oura.connect(st.ouraClientId);
-          } }, 'Yhdistä Oura')]),
+          } }, 'Yhdistä Oura')],
+      h('div', { class: 'field', style: 'margin-top:14px' },
+        h('label', {}, 'Välipalvelimen osoite (Cloudflare Worker) – tarvitaan, koska Oura ei salli suoria selainpyyntöjä'),
+        h('input', { value: st.ouraProxy || '', placeholder: 'https://salitreeni-oura.xxx.workers.dev', autocapitalize: 'off', inputmode: 'url',
+          onchange: async (e) => { st.ouraProxy = e.target.value.trim().replace(/\/+$/, ''); await saveSettings(); toast('Tallennettu'); } }))),
 
     h('h2', {}, 'Varmuuskopio'),
     h('div', { class: 'card' },
