@@ -4,21 +4,18 @@ import { S, setRender, loadAll } from './state.js';
 import { renderWorkout, resumeActive } from './views-workout.js';
 import { renderHistory } from './views-history.js';
 import { renderProgress } from './views-progress.js';
-import { renderOther } from './views-other.js';
 import { renderSettings } from './views-settings.js';
 
 const ICONS = {
   workout: '<path d="M6 8v8M18 8v8M3 10v4M21 10v4M6 12h12"/>',
   history: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   progress: '<path d="M5 20V11M11 20V4M17 20v-6M2 20h20"/>',
-  other: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
   settings: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
 };
 const TABS = [
   ['workout', 'Treeni', renderWorkout],
   ['history', 'Historia', renderHistory],
   ['progress', 'Edistyminen', renderProgress],
-  ['other', 'Muu', renderOther],
   ['settings', 'Asetukset', renderSettings],
 ];
 

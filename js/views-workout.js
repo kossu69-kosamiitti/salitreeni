@@ -3,8 +3,15 @@ import { db } from './db.js';
 import { h, uid, fmtDate, mmss, parseMMSS } from './util.js';
 import {
   S, render, saveActive, U, toDisp, toKg, round2, fmtW, est1rm, exById, exName,
-  sortedSessions, lastEntryFor, bestFor, sessionStats, modal, confirmBox, toast, pickExercise,
+  sortedSessions, lastEntryFor, lastNEntriesFor, bestFor, sessionStats, modal, confirmBox, toast, pickExercise, editExerciseDialog,
 } from './state.js';
+import { exerciseDetailModal } from './views-exercise.js';
+
+// Liikkeen nimi tekstinä, klikattava -> avaa liikkeen tiedot/historia-näkymä.
+function exLink(id) {
+  const ex = exById(id);
+  return ex ? h('button', { class: 'lnk', onclick: () => exerciseDetailModal(ex) }, ex.name) : h('span', {}, exName(id));
+}
 
 // ---------- Lepoajastin ----------
 let timer = null;
@@ -105,18 +112,54 @@ const restFrom = (item, i) => {
   return (item && item.rest) || S.settings.rest;
 };
 
-// Luo valmiit sarjarivit, esitäytetty edellisen kerran saman sarjan arvoilla
+// Tavoitetoistot treenipohjassa voi olla kiinteä luku ("5") tai toistoväli ("8-12").
+// Kiinteä luku = väli jossa min===max.
+function parseRepRange(targetReps) {
+  const s = (targetReps || '').trim();
+  const range = s.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+  if (range) return { min: parseInt(range[1], 10), max: parseInt(range[2], 10) };
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) && n > 0 ? { min: n, max: n } : null;
+}
+
+// Luo valmiit sarjarivit, esitäytetty PROGRESSIOEHDOTUKSELLA (per sarjaindeksi erikseen, jolloin
+// esim. kärkisarja ja kevyemmät jatkosarjat etenevät toisistaan riippumatta - kumpikin katsoo
+// vain omaa historiaansa samassa sarjaindeksissä):
+// - kiinteä toistotavoite (esim. "5"): kuten ennenkin - tavoite pysyy samana, paino nousee yhden
+//   korotusaskelen kun tavoite on saavutettu tai ylitetty, muuten paino pysyy.
+// - toistoväli (esim. "8-12"): jos edellinen kerta oli välin YLÄRAJALLA tai yli, nosta paino yhdellä
+//   korotusaskelella ja palaa välin ALARAJAAN; muuten pidä paino samana ja ehdota +1 toisto
+//   edelliseen nähden (ei ylitä ylärajaa).
+// - vapaassa treenissä / ei tavoitetta: jos viimeksi toistoja oli saman verran tai enemmän kuin
+//   sitä edeltävällä kerralla, ehdota +askel painoa; muuten samaa painoa/toistoja.
 function buildSets(exId, count, targetReps, item) {
-  const prev = lastEntryFor(exId);
+  const [prev, prev2] = lastNEntriesFor(exId, 2);
   const n = count || (prev ? prev.sets.length : 3);
+  const range = parseRepRange(targetReps);
+  const step = toKg(S.settings.step);
   return Array.from({ length: n }, (_, i) => {
     const p = prev ? prev.sets[i] || prev.sets[prev.sets.length - 1] : null;
-    return {
-      w: p ? p.w : 0,
-      r: p ? p.r : parseInt(targetReps, 10) || 8,
-      rest: restFrom(item, i),
-      done: false,
-    };
+    const p2 = prev2 ? prev2.sets[i] || prev2.sets[prev2.sets.length - 1] : null;
+    let w = p ? p.w : 0;
+    let r = p ? p.r : (range ? range.min : 8);
+    if (p) {
+      if (range) {
+        if (range.min === range.max) {
+          r = range.max;
+          w = p.r >= range.max ? round2(p.w + step) : p.w;
+        } else if (p.r >= range.max) {
+          w = round2(p.w + step);
+          r = range.min;
+        } else {
+          w = p.w;
+          r = Math.min(p.r + 1, range.max);
+        }
+      } else if (p2) {
+        r = p.r;
+        w = p.r >= p2.r ? round2(p.w + step) : p.w;
+      }
+    }
+    return { w, r, rest: restFrom(item, i), done: false };
   });
 }
 
@@ -127,8 +170,10 @@ async function startSession(tpl) {
     name: tpl ? tpl.name : 'Vapaa treeni',
     start: Date.now(),
     note: '',
+    // Muistiinpano esitäytetään automaattisesti liikkeen edellisestä kirjauksesta (esim. "raskas päivä",
+    // vinkki tekniikasta) - muokattavissa/tyhjennettävissä normaalisti, jos ei relevantti tällä kertaa.
     entries: tpl
-      ? tpl.items.map((it) => ({ exId: it.exId, note: '', sets: buildSets(it.exId, it.sets, it.reps, it) }))
+      ? tpl.items.map((it) => ({ exId: it.exId, note: (lastEntryFor(it.exId) || {}).note || '', sets: buildSets(it.exId, it.sets, it.reps, it) }))
       : [],
   };
   await saveActive();
@@ -157,7 +202,7 @@ function homeView() {
       h('div', { class: 'small muted' }, 'Seuraavaksi vuorossa'),
       h('h1', { style: 'margin:2px 0 8px' }, next.name),
       h('div', { class: 'muted small', style: 'margin-bottom:12px' },
-        next.items.map((it) => `${exName(it.exId)} ${it.sets}×${it.reps}`).join(' · ')),
+        next.items.flatMap((it, i) => [i ? ' · ' : null, exLink(it.exId), ` ${it.sets}×${it.reps}`])),
       h('button', { class: 'primary big', onclick: () => startSession(next) }, 'Aloita treeni')));
     const others = [...S.templates].sort((a, b) => a.order - b.order).filter((t) => t.id !== next.id);
     if (others.length) {
@@ -176,7 +221,7 @@ function homeView() {
       h('div', { class: 'card' },
         h('div', { class: 'row between' }, h('b', {}, last.name), h('span', { class: 'muted small' }, fmtDate(last.start))),
         h('div', { class: 'muted small', style: 'margin-top:4px' },
-          `${st.sets} sarjaa · ${Math.round(toDisp(st.tonnage)).toLocaleString('fi')} ${U()} kokonaisvolyymi`)));
+          `${st.sets} sarjaa · ${st.reps} toistoa`)));
   }
   const stale = S.sessions.length && Date.now() - S.lastBackup > 30 * 86400000;
   if (stale) {
@@ -294,15 +339,20 @@ function exMenu(en) {
   return modal((close) => {
     const act = (fn) => async () => { close(null); await fn(); };
     return h('div', {},
-      h('h2', {}, exName(en.exId)),
+      h('h2', {}, h('button', { class: 'lnk', onclick: act(async () => { const ex = exById(en.exId); if (ex) exerciseDetailModal(ex); }) }, exName(en.exId))),
       h('button', { class: 'pick', onclick: act(() => noteDialog(en)) }, 'Muistiinpano'),
       h('button', { class: 'pick', onclick: act(() => editRest(en, 0)) }, 'Lepoaika (kaikille sarjoille)'),
-      h('button', { class: 'pick', onclick: act(() => plateCalc(0)) }, 'Levytyslaskuri'),
+      h('button', { class: 'pick', onclick: act(async () => {
+        const ex = exById(en.exId);
+        if (!ex) return;
+        if (await editExerciseDialog(ex)) render();
+      }) }, 'Muokkaa liikkeen tietoja'),
       h('button', { class: 'pick', onclick: act(async () => {
         if (en.sets.some((s) => s.done)) return toast('Peru ensin kuitatut sarjat');
         const id = await pickExercise();
         if (!id) return;
         en.exId = id;
+        en.note = (lastEntryFor(id) || {}).note || '';
         en.sets = buildSets(id, en.sets.length, '8', null);
         await saveActive();
         render();
@@ -317,13 +367,31 @@ function exMenu(en) {
   });
 }
 
+// Siirtää liikkeen käynnissä olevan treenin sisällä - uusi järjestys tallentuu myös treenipohjaan
+// kun treeni lopetetaan, jos treenipohjan poikkeama-kysely (finish()) niin päättää.
+function moveEntry(en, dir) {
+  const arr = S.active.entries;
+  const i = arr.indexOf(en);
+  const j = i + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  saveActive();
+  render();
+}
+
 function entryBlock(en) {
   const prev = lastEntryFor(en.exId);
   const ex = exById(en.exId);
+  const i = S.active.entries.indexOf(en);
   const block = h('section', { class: 'ex' },
     h('div', { class: 'exh' },
-      h('span', { class: 'exn' }, ex ? ex.name : '(poistettu liike)'),
-      h('button', { class: 'more', 'aria-label': 'Liikkeen valikko', onclick: () => exMenu(en) }, '⋯')),
+      ex
+        ? h('button', { class: 'exn exn-link', onclick: () => exerciseDetailModal(ex) }, ex.name)
+        : h('span', { class: 'exn' }, '(poistettu liike)'),
+      h('span', { class: 'row', style: 'gap:2px' },
+        h('button', { class: 'small ghost', 'aria-label': 'Siirrä ylös', disabled: i === 0, onclick: () => moveEntry(en, -1) }, '↑'),
+        h('button', { class: 'small ghost', 'aria-label': 'Siirrä alas', disabled: i === S.active.entries.length - 1, onclick: () => moveEntry(en, 1) }, '↓'),
+        h('button', { class: 'more', 'aria-label': 'Liikkeen valikko', onclick: () => exMenu(en) }, '⋯'))),
     en.note ? h('div', { class: 'note' }, en.note) : null,
     h('div', { class: 'shead' }, h('span', {}, 'Sarja'), h('span', {}, 'Edellinen'), h('span', {}, U()), h('span', {}, 'Toistot'), h('span', {}, '')),
     en.sets.map((s, i) => setRow(en, s, i, prev)),
@@ -363,7 +431,7 @@ function activeView() {
       onclick: async () => {
         const id = await pickExercise();
         if (!id) return;
-        a.entries.push({ exId: id, note: '', sets: buildSets(id, 0, '8', null) });
+        a.entries.push({ exId: id, note: (lastEntryFor(id) || {}).note || '', sets: buildSets(id, 0, '8', null) });
         await saveActive();
         render();
       },
@@ -392,6 +460,26 @@ async function discard() {
   await clearActive();
 }
 
+// Poikkesiko tehty treeni pohjastaan (eri liikkeet, eri järjestys tai eri sarjamäärä)?
+// Sarjamäärä verrataan kaikkiin lisättyihin sarjoihin (myös kuittaamattomiin), jotta yksittäinen
+// unohtunut kuittaus ei näytä väärin poikkeamana.
+function templateDeviates(tpl, entries) {
+  if (tpl.items.length !== entries.length) return true;
+  return tpl.items.some((it, i) => it.exId !== entries[i].exId || it.sets !== entries[i].sets.length);
+}
+
+// Päivittää treenipohjan liikkeet/järjestyksen/sarjamäärän vastaamaan tehtyä treeniä.
+// Toistotavoite, lepoajat jne. säilytetään ennallaan liikkeille jotka olivat pohjassa jo valmiiksi.
+async function syncTemplateFromSession(tpl, entries) {
+  tpl.items = entries.map((e) => {
+    const existing = tpl.items.find((it) => it.exId === e.exId);
+    return existing ? { ...existing, sets: e.sets.length } : { exId: e.exId, sets: e.sets.length, reps: '8', rest: S.settings.rest };
+  });
+  await db.put('templates', tpl);
+  const i = S.templates.findIndex((t) => t.id === tpl.id);
+  if (i >= 0) S.templates[i] = tpl;
+}
+
 async function finish() {
   const a = S.active;
   const done = a.entries.filter((e) => e.sets.some((s) => s.done));
@@ -404,6 +492,16 @@ async function finish() {
     ? `Lopetetaanko treeni? ${undone} kuittaamatonta sarjaa jätetään pois.`
     : 'Lopetetaanko treeni ja tallennetaan se?';
   if (!(await confirmBox(msg, 'Tallenna'))) return;
+
+  const tpl = a.templateId ? S.templates.find((t) => t.id === a.templateId) : null;
+  if (tpl && templateDeviates(tpl, done)) {
+    const sync = await confirmBox(
+      'Treeni poikkesi pohjasta (liikkeet, järjestys tai sarjamäärä eri kuin pohjassa). Päivitetäänkö treenipohja vastaamaan tätä kertaa, jotta ehdotukset ovat oikein seuraavalla kerralla?',
+      'Päivitä pohja'
+    );
+    if (sync) await syncTemplateFromSession(tpl, done);
+  }
+
   const s = {
     id: a.id, templateId: a.templateId, name: a.name, start: a.start, end: Date.now(), note: a.note || '',
     entries: done.map((e) => ({
@@ -421,48 +519,14 @@ async function finish() {
 function summary(s) {
   const st = sessionStats(s);
   const prs = [];
-  s.entries.forEach((e) => e.sets.forEach((x) => x.pr && prs.push(`${exName(e.exId)} ${fmtW(x.w)} ${U()} × ${x.r}`)));
+  s.entries.forEach((e) => e.sets.forEach((x) => x.pr && prs.push({ exId: e.exId, w: x.w, r: x.r })));
   modal((close) => h('div', {},
     h('h2', {}, 'Treeni tallennettu'),
     h('div', { class: 'statrow', style: 'grid-template-columns:repeat(3,1fr)' },
       h('div', { class: 'stat' }, h('b', {}, Math.max(1, Math.round((s.end - s.start) / 60000))), h('span', {}, 'min')),
       h('div', { class: 'stat' }, h('b', {}, st.sets), h('span', {}, 'sarjaa')),
-      h('div', { class: 'stat' }, h('b', {}, Math.round(toDisp(st.tonnage)).toLocaleString('fi')), h('span', {}, U() + ' volyymi'))),
-    prs.length ? h('div', { style: 'margin-top:14px' }, h('b', {}, 'Ennätykset'), prs.map((p) => h('div', {}, h('span', { class: 'pr' }, 'PR'), ' ' + p))) : null,
+      h('div', { class: 'stat' }, h('b', {}, st.reps), h('span', {}, 'toistoa'))),
+    prs.length ? h('div', { style: 'margin-top:14px' }, h('b', {}, 'Ennätykset'),
+      prs.map((p) => h('div', {}, h('span', { class: 'pr' }, 'PR'), ' ', exLink(p.exId), ` ${fmtW(p.w)} ${U()} × ${p.r}`))) : null,
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: () => close(true) }, 'Valmis'))));
-}
-
-// ---------- Levytyslaskuri ----------
-export function plateCalc(current) {
-  return modal((close) => {
-    const st = S.settings;
-    const inp = h('input', { type: 'number', inputmode: 'decimal', step: 'any', value: current || '' });
-    const out = h('div', { class: 'card', style: 'margin-top:12px' });
-    const calc = () => {
-      const t = parseFloat(inp.value) || 0;
-      const per = (t - st.bar) / 2;
-      if (per < 0) {
-        out.replaceChildren(h('div', { class: 'muted' }, `Pelkkä tanko painaa ${st.bar} ${U()}.`));
-        return;
-      }
-      let rem = per;
-      const used = [];
-      for (const p of [...st.plates].sort((x, y) => y - x)) {
-        while (rem + 1e-9 >= p) {
-          used.push(p);
-          rem -= p;
-        }
-      }
-      out.replaceChildren(
-        h('div', { class: 'muted small' }, `Tanko ${st.bar} ${U()}, levyt per puoli:`),
-        h('div', { style: 'font-size:20px;font-weight:700;margin-top:4px' }, used.length ? used.join(' + ') : 'Ei levyjä'),
-        rem > 0.01 ? h('div', { class: 'err small', style: 'margin-top:6px' }, `Jää ${round2(rem)} ${U()} per puoli – ei saatavilla olevilla levyillä.`) : null);
-    };
-    inp.addEventListener('input', calc);
-    calc();
-    return h('div', {},
-      h('h2', {}, 'Levytyslaskuri'),
-      h('label', {}, `Tavoitepaino (${U()})`), inp, out,
-      h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: () => close(null) }, 'Sulje')));
-  });
 }

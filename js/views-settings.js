@@ -1,10 +1,17 @@
 // Asetukset: yksiköt, ohjelmat, liikkeet, varmuuskopio
 import { db, kvSet, STORE_NAMES } from './db.js';
 import { h, uid, fmtDate, downloadBlob, dayKey, mmss, parseMMSS } from './util.js';
-import { DEFAULT_SETTINGS, LB_DEFAULTS, KG_DEFAULTS } from './data.js';
+import { DEFAULT_SETTINGS, LB_DEFAULTS, KG_DEFAULTS, MUSCLES, BROAD, DEFAULT_MUSCLE_TARGETS } from './data.js';
 import {
-  S, render, loadAll, saveSettings, U, exName, exercisesSorted, modal, confirmBox, toast, pickExercise, newExerciseDialog,
+  S, render, loadAll, saveSettings, U, exName, exById, exercisesSorted, modal, confirmBox, toast, pickExercise, newExerciseDialog,
 } from './state.js';
+import { exerciseDetailModal } from './views-exercise.js';
+
+// Liikkeen nimi tekstinä, klikattava -> avaa liikkeen tiedot/historia-näkymä.
+function exLink(id) {
+  const ex = exById(id);
+  return ex ? h('button', { class: 'lnk', onclick: () => exerciseDetailModal(ex) }, ex.name) : h('span', {}, exName(id));
+}
 
 // ---------- Treenipohja ----------
 async function editTemplate(tpl) {
@@ -18,7 +25,7 @@ async function editTemplate(tpl) {
         const restVal = (it.rests && it.rests[0]) || it.rest || S.settings.rest;
         list.append(h('div', { class: 'tpl-item' },
           h('div', { class: 'row between' },
-            h('b', {}, exName(it.exId)),
+            h('b', {}, exLink(it.exId)),
             h('span', { class: 'row', style: 'gap:2px' },
               h('button', { class: 'small ghost', disabled: i === 0, onclick: () => { [t.items[i - 1], t.items[i]] = [t.items[i], t.items[i - 1]]; draw(); } }, '↑'),
               h('button', { class: 'small ghost', disabled: i === t.items.length - 1, onclick: () => { [t.items[i + 1], t.items[i]] = [t.items[i], t.items[i + 1]]; draw(); } }, '↓'),
@@ -85,15 +92,17 @@ function manageExercises() {
       list.replaceChildren();
       let g = null;
       exercisesSorted().forEach((e) => {
-        if (e.group !== g) { g = e.group; list.append(h('div', { class: 'grouphd' }, g)); }
+        if (e.muscle !== g) { g = e.muscle; list.append(h('div', { class: 'grouphd' }, MUSCLES.find((m) => m.id === g)?.name || g)); }
         const used = S.sessions.some((s) => s.entries.some((x) => x.exId === e.id)) || S.templates.some((t) => t.items.some((x) => x.exId === e.id));
-        list.append(h('div', { class: 'row between', style: 'padding:4px 0' }, h('span', {}, e.name),
-          e.custom ? h('button', { class: 'small ghost danger', onclick: async () => {
+        list.append(h('div', { class: 'row between', style: 'padding:4px 0' },
+          h('button', { class: 'pick', style: 'min-height:0;padding:0;background:none;flex:1', onclick: () => exerciseDetailModal(e).then(() => draw()) }, e.name),
+          h('button', { class: 'small ghost danger', onclick: async () => {
             if (used) return toast('Liike on käytössä treeneissä tai pohjissa, joten sitä ei voi poistaa');
+            if (!(await confirmBox(`Poistetaanko liike "${e.name}"? Tätä ei voi perua.`, 'Poista', true))) return;
             await db.del('exercises', e.id);
             S.exercises = S.exercises.filter((x) => x.id !== e.id);
             draw();
-          } }, 'Poista') : h('span', { class: 'muted small' }, 'valmis')));
+          } }, 'Poista')));
       });
     };
     draw();
@@ -106,7 +115,7 @@ function manageExercises() {
 // ---------- Varmuuskopio ----------
 async function buildBackup() {
   const out = { app: 'salitreeni', version: 1, exported: new Date().toISOString() };
-  for (const s of ['exercises', 'templates', 'sessions', 'activities', 'body']) out[s] = await db.all(s);
+  for (const s of ['exercises', 'templates', 'sessions', 'body']) out[s] = await db.all(s);
   out.settings = { ...S.settings };
   return out;
 }
@@ -144,8 +153,8 @@ async function importBackup(file) {
     return toast('Tiedosto ei ole kelvollinen varmuuskopio');
   }
   if (j.app !== 'salitreeni') return toast('Tämä ei ole Salitreeni-varmuuskopio');
-  if (!(await confirmBox(`Korvataanko nykyiset tiedot varmuuskopiolla? (${(j.sessions || []).length} treeniä, ${(j.activities || []).length} muuta liikuntaa)`, 'Korvaa', true))) return;
-  for (const s of ['exercises', 'templates', 'sessions', 'activities', 'body']) {
+  if (!(await confirmBox(`Korvataanko nykyiset tiedot varmuuskopiolla? (${(j.sessions || []).length} treeniä)`, 'Korvaa', true))) return;
+  for (const s of ['exercises', 'templates', 'sessions', 'body']) {
     await db.clear(s);
     await db.putMany(s, j[s] || []);
   }
@@ -171,7 +180,7 @@ export function renderSettings() {
     h('div', { class: 'muted small', style: 'margin-bottom:8px' }, 'Treenit kiertävät tässä järjestyksessä: sovellus ehdottaa aina seuraavaa.'),
     h('div', { class: 'card' },
       tpls.map((t, i) => h('div', { class: 'row', style: 'padding:6px 0;border-top:' + (i ? '1px solid var(--line)' : '0') },
-        h('div', { class: 'grow' }, h('b', {}, t.name), h('div', { class: 'muted small' }, t.items.map((x) => exName(x.exId)).join(', '))),
+        h('div', { class: 'grow' }, h('b', {}, t.name), h('div', { class: 'muted small' }, t.items.flatMap((x, i) => [i ? ', ' : null, exLink(x.exId)]))),
         h('button', { class: 'small ghost', disabled: i === 0, onclick: () => moveTemplate(t, -1) }, '↑'),
         h('button', { class: 'small ghost', disabled: i === tpls.length - 1, onclick: () => moveTemplate(t, 1) }, '↓'),
         h('button', { class: 'small', onclick: () => editTemplate(t) }, 'Muokkaa'))),
@@ -187,14 +196,26 @@ export function renderSettings() {
           await saveSettings();
           render();
         } }, h('option', { value: 'kg', selected: st.unit === 'kg' }, 'Kilogrammat (kg)'), h('option', { value: 'lb', selected: st.unit === 'lb' }, 'Paunat (lb)'))),
-      num('step', `Painon askel + / − napeissa (${U()})`),
-      num('rest', 'Lepoajastin (sekuntia)'),
-      num('bar', `Tangon paino (${U()})`),
-      h('div', { class: 'field' }, h('label', {}, `Käytettävissä olevat levyt per puoli (${U()}, pilkulla erotettuna)`),
-        h('input', { value: st.plates.join(', '), onchange: async (e) => {
-          const p = e.target.value.split(/[,\s]+/).map((x) => parseFloat(x.replace(',', '.'))).filter((x) => x > 0);
-          if (p.length) { st.plates = p; await saveSettings(); toast('Tallennettu'); }
-        } }))),
+      num('step', `Painon korotusväli + / − napeissa (${U()})`),
+      num('rest', 'Lepoajastin (sekuntia)')),
+
+    h('h2', {}, 'Lihasvolyymitavoitteet'),
+    h('div', { class: 'muted small', style: 'margin-bottom:8px' }, 'Sarjaa / viikko per lihas. Oletusarvot ovat suuntaa-antavia, muokkaa omiin tarpeisiisi.'),
+    h('div', { class: 'card' }, BROAD.map((b, i) => h('div', { style: i ? 'margin-top:12px;border-top:1px solid var(--line);padding-top:10px' : '' },
+      h('b', { class: 'small' }, b),
+      MUSCLES.filter((m) => m.parent === b).map((m) => {
+        const cur = st.muscleTargets[m.id] || DEFAULT_MUSCLE_TARGETS[m.id];
+        const upd = (k) => (e) => {
+          const v = Math.max(0, parseInt(e.target.value, 10) || 0);
+          st.muscleTargets[m.id] = { ...(st.muscleTargets[m.id] || DEFAULT_MUSCLE_TARGETS[m.id]), [k]: v };
+          saveSettings();
+        };
+        return h('div', { class: 'row', style: 'margin-top:8px;gap:8px' },
+          h('span', { class: 'grow small' }, m.name),
+          h('input', { type: 'number', inputmode: 'numeric', min: '0', value: cur.min, style: 'width:60px;flex:0 0 60px', onchange: upd('min') }),
+          h('span', { class: 'muted small' }, '–'),
+          h('input', { type: 'number', inputmode: 'numeric', min: '0', value: cur.max, style: 'width:60px;flex:0 0 60px', onchange: upd('max') }));
+      })))),
 
     h('h2', {}, 'Varmuuskopio'),
     h('div', { class: 'card' },
@@ -204,8 +225,7 @@ export function renderSettings() {
       h('button', { class: 'big', style: 'margin-top:8px', onclick: () => fileIn.click() }, 'Tuo varmuuskopio'),
       fileIn),
 
-    h('h2', {}, 'Vaaravyöhyke'),
-    h('button', { class: 'danger big', onclick: async () => {
+    h('button', { class: 'danger big', style: 'margin-top:20px', onclick: async () => {
       if (!(await confirmBox('Poistetaanko KAIKKI tiedot tästä laitteesta? Tätä ei voi perua.', 'Poista kaikki', true))) return;
       for (const s of STORE_NAMES) await db.clear(s);
       location.reload();

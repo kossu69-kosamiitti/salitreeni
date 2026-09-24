@@ -3,7 +3,6 @@ const STORES = {
   exercises: 'id',
   templates: 'id',
   sessions: 'id',
-  activities: 'id',
   body: 'id',
   kv: 'key',
 };

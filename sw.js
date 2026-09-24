@@ -1,9 +1,9 @@
 // Service worker: sovellus toimii offline-tilassa (stale-while-revalidate)
-const VERSION = 'salitreeni-v6';
+const VERSION = 'salitreeni-v11';
 const ASSETS = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/db.js', 'js/util.js', 'js/data.js', 'js/charts.js', 'js/state.js',
-  'js/views-workout.js', 'js/views-history.js', 'js/views-progress.js', 'js/views-other.js', 'js/views-settings.js',
+  'js/app.js', 'js/db.js', 'js/util.js', 'js/data.js', 'js/charts.js', 'js/state.js', 'js/volume.js',
+  'js/views-workout.js', 'js/views-history.js', 'js/views-progress.js', 'js/views-settings.js', 'js/views-exercise.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 
