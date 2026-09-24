@@ -1,7 +1,7 @@
 {
   "name": "Salitreeni",
   "short_name": "Salitreeni",
-  "description": "Salitreenien kirjaus, edistyminen ja Oura-data",
+  "description": "Salitreenien kirjaus ja edistyminen",
   "lang": "fi",
   "start_url": "./",
   "scope": "./",

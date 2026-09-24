@@ -1,12 +1,11 @@
 // Käynnistys, alavalikko ja näkymän piirto
 import { h } from './util.js';
-import { S, setRender, loadAll, saveOura, toast } from './state.js';
+import { S, setRender, loadAll } from './state.js';
 import { renderWorkout, resumeActive } from './views-workout.js';
 import { renderHistory } from './views-history.js';
 import { renderProgress } from './views-progress.js';
-import { renderOther, syncOura } from './views-other.js';
+import { renderOther } from './views-other.js';
 import { renderSettings } from './views-settings.js';
-import * as oura from './oura.js';
 
 const ICONS = {
   workout: '<path d="M6 8v8M18 8v8M3 10v4M21 10v4M6 12h12"/>',
@@ -52,17 +51,9 @@ async function boot() {
     await navigator.storage?.persist?.();
   } catch {}
   await loadAll();
-  const red = oura.readRedirect();
-  if (red) {
-    S.oura.auth = red;
-    await saveOura();
-    S.ui.tab = 'other';
-    toast('Oura yhdistetty');
-  }
   setRender(render);
   render();
   resumeActive();
-  if (oura.isConnected(S.oura.auth) && (red || Date.now() - (S.oura.last || 0) > 6 * 3600 * 1000)) syncOura({ silent: !red });
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }

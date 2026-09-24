@@ -1,11 +1,10 @@
-// Asetukset: yksiköt, ohjelmat, liikkeet, Oura, varmuuskopio
+// Asetukset: yksiköt, ohjelmat, liikkeet, varmuuskopio
 import { db, kvSet, STORE_NAMES } from './db.js';
 import { h, uid, fmtDate, downloadBlob, dayKey, mmss, parseMMSS } from './util.js';
 import { DEFAULT_SETTINGS, LB_DEFAULTS, KG_DEFAULTS } from './data.js';
 import {
-  S, render, loadAll, saveSettings, saveOura, U, exName, exercisesSorted, modal, confirmBox, toast, pickExercise, newExerciseDialog,
+  S, render, loadAll, saveSettings, U, exName, exercisesSorted, modal, confirmBox, toast, pickExercise, newExerciseDialog,
 } from './state.js';
-import * as oura from './oura.js';
 
 // ---------- Treenipohja ----------
 async function editTemplate(tpl) {
@@ -109,7 +108,6 @@ async function buildBackup() {
   const out = { app: 'salitreeni', version: 1, exported: new Date().toISOString() };
   for (const s of ['exercises', 'templates', 'sessions', 'activities', 'body']) out[s] = await db.all(s);
   out.settings = { ...S.settings };
-  out.ouraDays = S.oura.days;
   return out;
 }
 const backupName = () => `salitreeni-varmuuskopio-${dayKey(Date.now())}.json`;
@@ -154,7 +152,6 @@ async function importBackup(file) {
   if (j.settings) await kvSet('settings', { ...DEFAULT_SETTINGS, ...j.settings });
   await kvSet('seeded', true);
   await loadAll();
-  if (j.ouraDays) { S.oura.days = j.ouraDays; await saveOura(); }
   render();
   toast('Tiedot tuotu');
 }
@@ -164,7 +161,6 @@ export function renderSettings() {
   const st = S.settings;
   const num = (key, label) => h('div', { class: 'field' }, h('label', {}, label),
     h('input', { type: 'number', inputmode: 'decimal', step: 'any', value: st[key], onchange: async (e) => { st[key] = parseFloat(e.target.value) || 0; await saveSettings(); toast('Tallennettu'); } }));
-  const connected = oura.isConnected(S.oura.auth);
   const fileIn = h('input', { type: 'file', accept: 'application/json,.json', class: 'hidden', onchange: (e) => e.target.files[0] && importBackup(e.target.files[0]) });
   const tpls = [...S.templates].sort((a, b) => a.order - b.order);
 
@@ -199,26 +195,6 @@ export function renderSettings() {
           const p = e.target.value.split(/[,\s]+/).map((x) => parseFloat(x.replace(',', '.'))).filter((x) => x > 0);
           if (p.length) { st.plates = p; await saveSettings(); toast('Tallennettu'); }
         } }))),
-
-    h('h2', {}, 'Oura'),
-    h('div', { class: 'card' },
-      connected
-        ? [h('div', { class: 'ok' }, 'Yhdistetty'), h('div', { class: 'muted small' }, 'Kirjautuminen voimassa ' + fmtDate(S.oura.auth.expires) + ' asti.'),
-          h('button', { class: 'big', style: 'margin-top:10px', onclick: async () => { S.oura.auth = null; await saveOura(); render(); } }, 'Katkaise yhteys')]
-        : [h('div', { class: 'muted small', style: 'margin-bottom:10px' },
-            '1. Luo ilmainen sovellus osoitteessa cloud.ouraring.com/oauth/applications',
-            h('br'), '2. Lisää sinne Redirect URI:ksi:', h('br'), h('code', {}, oura.redirectUri()),
-            h('br'), '3. Liitä alle sovelluksen Client ID ja paina Yhdistä.'),
-          h('div', { class: 'field' }, h('label', {}, 'Client ID'),
-            h('input', { value: st.ouraClientId || '', autocapitalize: 'off', onchange: async (e) => { st.ouraClientId = e.target.value.trim(); await saveSettings(); } })),
-          h('button', { class: 'primary big', onclick: () => {
-            if (!st.ouraClientId) return toast('Syötä ensin Client ID');
-            oura.connect(st.ouraClientId);
-          } }, 'Yhdistä Oura')],
-      h('div', { class: 'field', style: 'margin-top:14px' },
-        h('label', {}, 'Välipalvelimen osoite (Cloudflare Worker) – tarvitaan, koska Oura ei salli suoria selainpyyntöjä'),
-        h('input', { value: st.ouraProxy || '', placeholder: 'https://salitreeni-oura.xxx.workers.dev', autocapitalize: 'off', inputmode: 'url',
-          onchange: async (e) => { st.ouraProxy = e.target.value.trim().replace(/\/+$/, ''); await saveSettings(); toast('Tallennettu'); } }))),
 
     h('h2', {}, 'Varmuuskopio'),
     h('div', { class: 'card' },

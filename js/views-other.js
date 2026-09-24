@@ -1,84 +1,9 @@
-// Muu kuorma: juoksut, sähly yms. sekä Oura-yhteenveto
+// Muu kuorma: juoksut, sähly yms.
 import { db } from './db.js';
 import { h, uid, dayKey, keyToTs, fmtDate } from './util.js';
-import { S, render, saveOura, toast } from './state.js';
+import { S, render, toast } from './state.js';
 import { SPORTS } from './data.js';
 import { activityRow } from './views-history.js';
-import * as oura from './oura.js';
-
-let syncing = false;
-let syncMsg = '';
-
-export async function syncOura({ silent = false } = {}) {
-  if (syncing || !oura.isConnected(S.oura.auth)) return;
-  syncing = true;
-  syncMsg = 'Haetaan tietoja Ourasta…';
-  if (!silent) render();
-  try {
-    const res = await oura.sync(S.oura.auth.token, 30, S.settings.ouraProxy);
-    const known = new Set(S.activities.filter((a) => a.ouraId).map((a) => a.ouraId));
-    const dismissed = new Set(S.oura.dismissed || []);
-    let added = 0;
-    for (const w of res.workouts) {
-      if (known.has(w.ouraId) || dismissed.has(w.ouraId)) continue;
-      const a = { id: uid(), ts: w.ts, sport: w.sport, minutes: w.minutes, note: '', source: 'oura', ouraId: w.ouraId, calories: w.calories, distance: w.distance };
-      await db.put('activities', a);
-      S.activities.push(a);
-      added++;
-    }
-    S.oura.days = { ...S.oura.days, ...res.days };
-    S.oura.last = Date.now();
-    await saveOura();
-    if (res.errors && res.errors.length) {
-      const names = { workout: 'treenit', daily_readiness: 'palautuminen', daily_sleep: 'unipisteet', sleep: 'HRV ja leposyke' };
-      syncMsg = 'Päivitetty osittain (uusia treenejä: ' + added + '). Epäonnistui: ' +
-        res.errors.map((e) => `${names[e.endpoint] || e.endpoint} (${e.message === 'NET' ? 'selain esti / ei yhteyttä' : e.message})`).join(', ') + '.';
-    } else {
-      syncMsg = `Päivitetty. Uusia treenejä: ${added}.`;
-    }
-  } catch (e) {
-    if (e.message === 'AUTH') {
-      S.oura.auth = null;
-      await saveOura();
-      syncMsg = 'Oura-kirjautuminen on vanhentunut. Yhdistä uudelleen Asetuksissa.';
-    } else if (e.message === 'CORS') {
-      syncMsg = S.settings.ouraProxy
-        ? 'Välipalvelin ei vastaa tai estää pyynnön. Tarkista osoite Asetuksissa (Oura) ja että Worker on julkaistu.'
-        : 'Ouran rajapinta ei salli suoria selainpyyntöjä (CORS). Lisää välipalvelimen osoite Asetuksissa (Oura-osio), ohjeet README:ssä.';
-    } else if (e.message.startsWith('FAIL:')) {
-      syncMsg = 'Oura-haku epäonnistui: ' + e.message.slice(5);
-    } else {
-      syncMsg = 'Oura-haku epäonnistui: ' + e.message;
-    }
-    if (silent) syncMsg = '';
-  } finally {
-    syncing = false;
-    if (!silent || syncMsg) render();
-  }
-}
-
-function ouraSection() {
-  const connected = oura.isConnected(S.oura.auth);
-  if (!connected) {
-    return h('div', { class: 'card' },
-      h('b', {}, 'Oura'),
-      h('p', { class: 'muted small' }, 'Yhdistä Oura-rengas, niin palautuminen, uni, HRV ja Ouran kirjaamat treenit tulevat tänne automaattisesti. Yhteys tehdään Asetukset-välilehdellä.'),
-      syncMsg ? h('p', { class: 'err small' }, syncMsg) : null);
-  }
-  const keys = Object.keys(S.oura.days || {}).sort().slice(-7).reverse();
-  return h('div', { class: 'card' },
-    h('div', { class: 'row between' }, h('b', {}, 'Oura'),
-      h('button', { class: 'small', disabled: syncing, onclick: () => syncOura() }, syncing ? 'Päivitetään…' : 'Päivitä')),
-    syncMsg ? h('div', { class: 'small ' + (syncMsg.startsWith('Päivitetty') && !syncMsg.includes('osittain') ? 'ok' : 'muted'), style: 'margin-top:6px' }, syncMsg) : null,
-    keys.length ? h('table', { style: 'margin-top:8px' },
-      h('tr', {}, h('th', {}, 'Päivä'), h('th', { class: 'r' }, 'Palaut.'), h('th', { class: 'r' }, 'Uni'), h('th', { class: 'r' }, 'HRV'), h('th', { class: 'r' }, 'Leposyke')),
-      keys.map((k) => {
-        const d = S.oura.days[k];
-        return h('tr', {}, h('td', {}, k.slice(8) + '.' + k.slice(5, 7) + '.'),
-          h('td', { class: 'r' }, d.readiness ?? '–'), h('td', { class: 'r' }, d.sleep ?? '–'), h('td', { class: 'r' }, d.hrv ?? '–'), h('td', { class: 'r' }, d.rhr ?? '–'));
-      })) : h('p', { class: 'muted small' }, 'Ei vielä tietoja – paina Päivitä.'),
-    h('div', { class: 'muted small', style: 'margin-top:8px' }, 'Palaut. = Readiness-pisteet. Voimaharjoittelu jätetään tuomatta, koska kirjaat sen itse.'));
-}
 
 export function renderOther() {
   const sport = h('select', {}, SPORTS.map((s) => h('option', { value: s }, s)));
@@ -91,8 +16,7 @@ export function renderOther() {
   const list = [...S.activities].sort((a, b) => b.ts - a.ts).slice(0, 25);
   return h('div', {},
     h('h1', {}, 'Muu kuorma'),
-    ouraSection(),
-    h('h2', {}, 'Lisää liikuntaa'),
+    h('h2', { style: 'margin-top:0' }, 'Lisää liikuntaa'),
     h('div', { class: 'card' },
       h('div', { class: 'field' }, h('label', {}, 'Laji'), sport, custom),
       h('div', { class: 'grid2' },

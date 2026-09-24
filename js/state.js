@@ -11,7 +11,6 @@ export const S = {
   body: [],
   settings: { ...DEFAULT_SETTINGS },
   active: null, // käynnissä oleva treeni (säilyy sovelluksen sulkemisen yli)
-  oura: { auth: null, days: {}, dismissed: [], last: 0 },
   lastBackup: 0,
   ui: { tab: 'workout', calMonth: new Date(), selDay: null, progEx: null, progMode: '1rm' },
 };
@@ -29,13 +28,11 @@ export async function loadAll() {
   for (const s of ['exercises', 'templates', 'sessions', 'activities', 'body']) S[s] = await db.all(s);
   S.settings = { ...DEFAULT_SETTINGS, ...(await kvGet('settings', {})) };
   S.active = await kvGet('active', null);
-  S.oura = { auth: null, days: {}, dismissed: [], last: 0, ...(await kvGet('oura', {})) };
   S.lastBackup = await kvGet('lastBackup', 0);
 }
 
 export const saveSettings = () => kvSet('settings', S.settings);
 export const saveActive = () => (S.active ? kvSet('active', S.active) : db.del('kv', 'active'));
-export const saveOura = () => kvSet('oura', S.oura);
 
 // ---- Yksiköt: data tallennetaan aina kilogrammoina ----
 export const U = () => S.settings.unit;

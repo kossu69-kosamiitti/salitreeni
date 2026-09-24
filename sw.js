@@ -1,8 +1,8 @@
 // Service worker: sovellus toimii offline-tilassa (stale-while-revalidate)
-const VERSION = 'salitreeni-v5';
+const VERSION = 'salitreeni-v6';
 const ASSETS = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/db.js', 'js/util.js', 'js/data.js', 'js/charts.js', 'js/oura.js', 'js/state.js',
+  'js/app.js', 'js/db.js', 'js/util.js', 'js/data.js', 'js/charts.js', 'js/state.js',
   'js/views-workout.js', 'js/views-history.js', 'js/views-progress.js', 'js/views-other.js', 'js/views-settings.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
@@ -22,7 +22,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== location.origin) return; // Oura-kutsut suoraan verkkoon
+  if (req.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
     caches.open(VERSION).then(async (cache) => {
       const cached = await cache.match(req, { ignoreSearch: true });

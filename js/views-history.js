@@ -1,7 +1,7 @@
 // Historia: kalenteri (sali / muu kuorma / keho) ja päivän tiedot
 import { db } from './db.js';
 import { h, dayKey, fmtDate, fmtTime, WEEKDAYS, MONTHS } from './util.js';
-import { S, render, U, fmtW, exName, sessionStats, toDisp, modal, confirmBox, saveOura } from './state.js';
+import { S, render, U, fmtW, exName, sessionStats, toDisp, modal, confirmBox } from './state.js';
 
 export function sessionModal(s) {
   const st = sessionStats(s);
@@ -33,10 +33,6 @@ export async function deleteActivity(a) {
   if (!(await confirmBox(`Poistetaanko ${a.sport} (${a.minutes} min)?`, 'Poista', true))) return;
   await db.del('activities', a.id);
   S.activities = S.activities.filter((x) => x.id !== a.id);
-  if (a.ouraId) {
-    S.oura.dismissed = [...(S.oura.dismissed || []), a.ouraId];
-    await saveOura();
-  }
   render();
 }
 
@@ -46,7 +42,6 @@ export function activityRow(a) {
       h('b', {}, a.sport), ` ${a.minutes} min`,
       a.distance ? ` · ${(a.distance / 1000).toFixed(1)} km` : '',
       a.calories ? ` · ${a.calories} kcal` : '',
-      a.source === 'oura' ? h('span', { class: 'pill', style: 'margin-left:6px' }, 'Oura') : null,
       a.note ? h('div', { class: 'muted small' }, a.note) : null),
     h('button', { class: 'small ghost', 'aria-label': 'Poista', onclick: () => deleteActivity(a) }, '✕'));
 }
@@ -105,9 +100,8 @@ export function renderHistory() {
     const ss = S.sessions.filter((s) => dayKey(s.start) === key);
     const aa = S.activities.filter((a) => dayKey(a.ts) === key);
     const bb = S.body.filter((b) => b.date === key);
-    const od = S.oura.days && S.oura.days[key];
     v.append(h('h2', {}, `${kd}.${km}.${ky}`));
-    if (!ss.length && !aa.length && !bb.length && !od) v.append(h('div', { class: 'muted' }, 'Ei merkintöjä tälle päivälle.'));
+    if (!ss.length && !aa.length && !bb.length) v.append(h('div', { class: 'muted' }, 'Ei merkintöjä tälle päivälle.'));
     ss.forEach((s) => {
       const st = sessionStats(s);
       v.append(h('button', { class: 'pick card', style: 'min-height:0', onclick: () => sessionModal(s) },
@@ -118,9 +112,6 @@ export function renderHistory() {
       h('b', {}, 'Keho: '),
       [b.weight != null ? `${fmtW(b.weight)} ${U()}` : null, b.waist ? `vyötärö ${b.waist} cm` : null, b.chest ? `rinta ${b.chest} cm` : null,
         b.arm ? `käsivarsi ${b.arm} cm` : null, b.thigh ? `reisi ${b.thigh} cm` : null].filter(Boolean).join(' · '))));
-    if (od) v.append(h('div', { class: 'card small' }, h('b', {}, 'Oura: '),
-      [od.readiness != null ? `palautuminen ${od.readiness}` : null, od.sleep != null ? `uni ${od.sleep}` : null,
-        od.sleepH != null ? `${od.sleepH} h` : null, od.hrv != null ? `HRV ${od.hrv}` : null, od.rhr != null ? `leposyke ${od.rhr}` : null].filter(Boolean).join(' · ')));
   } else {
     const recent = [...S.sessions].sort((a, b) => b.start - a.start).slice(0, 8);
     if (recent.length) {

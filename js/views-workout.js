@@ -142,22 +142,6 @@ export function renderWorkout() {
   return S.active && S.active.entries && S.active.entries.every((e) => e.sets.every((s) => 'done' in s)) ? activeView() : homeView();
 }
 
-function ouraCard() {
-  const days = S.oura.days || {};
-  const key = Object.keys(days).sort().pop();
-  if (!key) return null;
-  const d = days[key];
-  const bits = [];
-  if (d.readiness != null) bits.push(['Palautuminen', d.readiness]);
-  if (d.sleep != null) bits.push(['Uni', d.sleep]);
-  if (d.hrv != null) bits.push(['HRV', d.hrv]);
-  if (d.rhr != null) bits.push(['Leposyke', d.rhr]);
-  if (!bits.length) return null;
-  return h('div', { class: 'card' },
-    h('div', { class: 'small muted', style: 'margin-bottom:8px' }, 'Oura · ' + key),
-    h('div', { class: 'statrow' }, bits.map(([l, v]) => h('div', { class: 'stat' }, h('b', {}, v), h('span', {}, l)))));
-}
-
 function homeView() {
   if (S.active) {
     // vanhan muotoinen keskeneräinen treeni (ennen päivitystä) siivotaan pois
@@ -166,7 +150,7 @@ function homeView() {
   }
   const next = nextTemplate();
   const last = sortedSessions().pop();
-  const v = h('div', {}, h('h1', {}, 'Treeni'), ouraCard());
+  const v = h('div', {}, h('h1', {}, 'Treeni'));
 
   if (next) {
     v.append(h('div', { class: 'card' },
